@@ -1,0 +1,24 @@
+services:
+  obs-svc-agg:
+    build: .
+    container_name: obs-svc-agg
+    environment:
+      - OBS_KAFKA_BROKERS=kafka:9092
+      - OBS_KAFKA_TOPIC=delight.events
+      - OBS_CONSUMER_GROUP=obs-svc-agg
+      - OBS_HTTP_ADDR=:8090
+    ports:
+      - "8090"
+    networks:
+      - dev-fleet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.obs-svc-agg.rule=Host(`obs.localhost`)"
+      - "traefik.http.services.obs-svc-agg.loadbalancer.server.port=8090"
+      - "fleet.essential=false"
+
+# dev-fleet is the single shared network (owned by traefik); everything reaches
+# kafka:9092 / schema-registry:8081 by docker DNS. No segmentation.
+networks:
+  dev-fleet:
+    external: true

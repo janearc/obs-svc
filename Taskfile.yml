@@ -1,0 +1,36 @@
+version: '3'
+
+# obs-svc consumes kafka-svc's contracts via generate-at-build: protos are
+# vendored under proto/ (source of truth: kafka-svc) and Go bindings are
+# generated into gen/ (never committed). buf is required (https://buf.build).
+
+tasks:
+  sync-proto:
+    desc: Re-vendor contracts from kafka-svc (the source of truth).
+    cmds:
+      - rm -rf proto/delight proto/observability
+      - cp -R ../kafka-logging/proto/delight proto/delight
+      - cp -R ../kafka-logging/proto/observability proto/observability
+
+  generate:
+    desc: Generate Go bindings from the vendored proto into gen/ (never committed).
+    cmds:
+      - buf generate
+
+  lint:
+    desc: Schema governance gates (FULL_TRANSITIVE protection lives in CI/registry).
+    cmds:
+      - buf lint
+      - buf breaking --against '.git#branch=main'
+
+  build:
+    desc: Build obs-svc-agg (regenerates bindings first).
+    deps: [generate]
+    cmds:
+      - go build -o bin/obs-svc-agg ./cmd/obs-svc-agg
+
+  test:
+    desc: Run the test suite with coverage.
+    deps: [generate]
+    cmds:
+      - go test ./... -cover
