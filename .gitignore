@@ -1,0 +1,5 @@
+# generated protobuf bindings -- never committed; run `task generate`
+gen/
+
+# build output
+bin/
