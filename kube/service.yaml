@@ -1,0 +1,28 @@
+# Cluster-internal Service for obs-svc-agg's HTTP surface (/health, /metrics,
+# /state). No NodePort/host port: per the migration contract, inbound reaches
+# services only via the single traefik edge (cloudflared -> traefik -> service).
+# An IngressRoute is intentionally not authored here -- obs-svc-agg's external
+# exposure (the dashboard) is owned by the obs-svc/transparent-sunset work and
+# routed at traefik; this Service is the stable in-cluster name traefik and the
+# metrics scraper address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: obs-svc-agg
+  namespace: fleet
+  labels:
+    app.kubernetes.io/name: obs-svc-agg
+    app.kubernetes.io/part-of: fleet
+  annotations:
+    # Prometheus scrape hint for the aggregator's exposition endpoint. The
+    # binary serves text/plain;version=0.0.4 on /metrics on the http port.
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8090"
+spec:
+  selector:
+    app.kubernetes.io/name: obs-svc-agg
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
