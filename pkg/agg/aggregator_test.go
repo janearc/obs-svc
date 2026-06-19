@@ -2,9 +2,26 @@ package agg
 
 import (
 	"testing"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	delightv1 "obs-svc/gen/go/delight/v1"
 )
+
+func TestAggregator_IngestUsesEventTimestamp(t *testing.T) {
+	a := New()
+	ts := time.Date(2026, 6, 19, 4, 24, 31, 0, time.UTC)
+	a.IngestBackup(&delightv1.BackupEvent{
+		ProjectName: "paling",
+		Success:     true,
+		Timestamp:   timestamppb.New(ts),
+	})
+	got := a.Snapshot().Backups["paling"].LastSeen
+	if !got.Equal(ts) {
+		t.Errorf("LastSeen = %s, want the event timestamp %s", got, ts)
+	}
+}
 
 func TestAggregator_ColdBootUnhealthy(t *testing.T) {
 	a := New()

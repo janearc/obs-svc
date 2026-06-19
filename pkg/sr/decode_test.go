@@ -46,6 +46,9 @@ func TestDecode_Rejects(t *testing.T) {
 	cases := map[string][]byte{
 		"short":     {0x00, 0, 0},
 		"bad magic": {0x01, 0, 0, 0, 1, 0},
+		// magic + id, then a message-index length byte (0x80) that is an
+		// incomplete varint with no continuation -> malformed length.
+		"malformed index length": {0x00, 0, 0, 0, 1, 0x80},
 	}
 	for name, b := range cases {
 		if _, err := Decode(b); err == nil {

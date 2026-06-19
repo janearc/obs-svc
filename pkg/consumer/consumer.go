@@ -52,25 +52,38 @@ func Run(ctx context.Context, brokers []string, group, topic string, a *agg.Aggr
 		if fetches.IsClientClosed() {
 			return nil
 		}
-		var fatal error
-		fetches.EachError(func(t string, p int32, e error) {
-			if errors.Is(e, context.Canceled) {
-				return
-			}
-			slog.Error("fetch error", "topic", t, "partition", p, "err", e)
-			fatal = e
-		})
-		if fatal != nil {
-			return fatal
+		if err := processFetches(a, fetches); err != nil {
+			return err
 		}
-
-		fetches.EachRecord(func(rec *kgo.Record) { handleRecord(a, rec) })
 
 		// Commit only after the batch is folded into state.
 		if err := cl.CommitUncommittedOffsets(ctx); err != nil {
 			slog.Error("offset commit failed", "err", err)
 		}
 	}
+}
+
+// processFetches folds one poll's worth of records into state. A transport
+// fetch error (other than a clean context cancellation) is returned so the
+// caller can tear the client down and let the daemon's backoff loop reconnect;
+// per-record decode failures are handled and swallowed by handleRecord so a
+// poison pill does not stall the partition. Separated from Run so the fold/error
+// semantics are unit-testable without a live broker.
+func processFetches(a *agg.Aggregator, fetches kgo.Fetches) error {
+	var fatal error
+	fetches.EachError(func(t string, p int32, e error) {
+		if errors.Is(e, context.Canceled) {
+			return
+		}
+		slog.Error("fetch error", "topic", t, "partition", p, "err", e)
+		fatal = e
+	})
+	if fatal != nil {
+		return fatal
+	}
+
+	fetches.EachRecord(func(rec *kgo.Record) { handleRecord(a, rec) })
+	return nil
 }
 
 // handleRecord decodes one record. A bad record is logged and skipped (and will

@@ -44,6 +44,14 @@ registry-driven type lookup is a future generalization (see §6).
 - A record that cannot be decoded/parsed is logged and skipped (and committed
   past) so a poison pill does not stall the partition. Durable dead-lettering is
   a follow-up (§6).
+- The fold/error semantics are split out of the Kafka client lifecycle:
+  `consumer.Run` owns the client (connect, ping, poll, commit) and
+  `processFetches` owns one poll's fold — record dispatch plus the rule that a
+  clean context cancellation on a partition is shutdown, not a fault, while any
+  other transport error is returned so the daemon tears the client down and the
+  backoff loop reconnects. The split keeps those rules unit-testable without a
+  live broker; the client lifecycle itself is covered end-to-end by the running
+  aggregator against live `delight.events`.
 
 ## 4. Health state machine
 
