@@ -1,0 +1,104 @@
+# obs-svc-agg: the Go observability aggregator. Consumes the fleet's
+# Protobuf-over-Kafka events (delight.events + observability.heartbeat), holds
+# all aggregated state in memory, and serves /health, /metrics, /state on :8090.
+#
+# Stateless by design: all durable state lives upstream in Kafka, and the
+# aggregator replays on (re)connect. So this is a plain single-replica
+# Deployment with no volumes -- a pod can die and reschedule freely; it rebuilds
+# its snapshot from the Kafka offsets. Scaling past one replica would duplicate
+# the in-memory aggregate (each replica folds the full topic independently), so
+# replicas stays 1 until the aggregate is externalized.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: obs-svc-agg
+  namespace: fleet
+  labels:
+    app.kubernetes.io/name: obs-svc-agg
+    app.kubernetes.io/part-of: fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: obs-svc-agg
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: obs-svc-agg
+        app.kubernetes.io/part-of: fleet
+    spec:
+      containers:
+        - name: obs-svc-agg
+          # Locally-built image (Dockerfile in this repo). Pinned to an explicit
+          # tag per the migration contract -- never :latest. The compose build
+          # produced `obs-svc-obs-svc-agg:latest`; the primary agent must
+          # re-tag/rebuild it as this tag before `k3d image import`, since k3d
+          # imports by exact name:tag and there is no registry to pull from.
+          # See handoff: this is the one image action flagged for Max.
+          image: obs-svc-agg:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            # Brokers point at the in-cluster kafka Service. Kept configurable
+            # (the binary reads OBS_KAFKA_BROKERS with a dev-fleet default of
+            # kafka:9092) so the same image runs under compose and k8s.
+            - name: OBS_KAFKA_BROKERS
+              value: kafka.fleet.svc.cluster.local:9092
+            # Topics: the binary defaults to delight.events,observability.heartbeat
+            # (consumer.TopicBackups + consumer.TopicHeartbeats). Set explicitly
+            # here so the consumed set is visible at the manifest layer and
+            # overridable without a rebuild. Note the env key is OBS_KAFKA_TOPICS
+            # (plural) -- the singular OBS_KAFKA_TOPIC in the old compose file is
+            # dead config the current binary does not read.
+            - name: OBS_KAFKA_TOPICS
+              value: delight.events,observability.heartbeat
+            - name: OBS_CONSUMER_GROUP
+              value: obs-svc-agg
+            - name: OBS_HTTP_ADDR
+              value: ":8090"
+          ports:
+            - name: http
+              containerPort: 8090
+          # readiness: /health returns 503 during the cold-boot UNHEALTHY window
+          # and 200 only once the consumer has connected to Kafka and folded
+          # state. So readiness gates traffic on a genuine "ready to answer"
+          # signal. initialDelaySeconds is generous because cold boot must wait
+          # for kafka to be reachable (and may back off if kafka is still coming
+          # up); failureThreshold keeps the pod out of rotation, not killed,
+          # while it waits.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # liveness: also /health, but with a long initialDelay and high
+          # failureThreshold so the cold-boot UNHEALTHY window (legitimately 503)
+          # never trips a restart loop -- liveness only fires if the process is
+          # genuinely wedged after it has had ample time to connect.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            # scratch image, static CGO-disabled binary, no filesystem writes and
+            # no privileges needed -- lock it all down.
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL

@@ -1,0 +1,20 @@
+# kustomize entry point for obs-svc-agg in namespace `fleet`.
+#
+# Only the aggregator is modeled here. obs-svc-apple (the Rust macOS floating
+# widget) is deliberately NOT migrated: it is a host GUI process bound to the
+# macOS window server and stays bare-metal -- it has no place in the cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: fleet
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingressroute.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: fleet
+    includeSelectors: false

@@ -1,0 +1,32 @@
+# IngressRoute for obs-svc-agg's HTTP surface (the proof-layer dashboard +
+# /health, /metrics, /state). obs-svc owns the dashboard the one edge exposes:
+#
+#   cloudflared  ->  traefik (k3s bundle, `web` :80)  ->  obs-svc-agg Service:8090
+#
+# Authored to the shared shape in ~/work/traefik/kube/ingressroute-template.yaml:
+# traefik v3 CRD group, the `web` entrypoint only (TLS terminates at the edge,
+# the tunnel forwards cleartext), a single Host rule, passHostHeader on. No
+# NodePort/hostPort -- traefik is the only edge. This is the CRD form of the
+# compose mesh's old obs.localhost dynamic-file router.
+apiVersion: traefik.io/v1alpha1   # traefik v3 CRD group (k3s v1.35.x). NOT containo.us (v2).
+kind: IngressRoute
+metadata:
+  name: obs-svc-agg
+  namespace: fleet           # must match the target Service's namespace
+                             # (allowCrossNamespace is off on the bundled traefik).
+  labels:
+    app.kubernetes.io/name: obs-svc-agg
+    app.kubernetes.io/part-of: fleet
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      # Identity-safe internal hostname; the real public hostname Cloudflare
+      # Access fronts is set at cloudflared/go-live, not baked in here.
+      match: Host(`obs.local`)
+      services:
+        - kind: Service
+          name: obs-svc-agg   # matches service.yaml metadata.name
+          port: 8090          # the Service's spec.ports[].port (named "http")
+          passHostHeader: true
