@@ -24,7 +24,7 @@ func main() {
 	defer stop()
 
 	brokers := splitEnv("OBS_KAFKA_BROKERS", "kafka:9092")
-	topic := getEnv("OBS_KAFKA_TOPIC", "delight.events")
+	topics := splitEnv("OBS_KAFKA_TOPICS", consumer.TopicBackups+","+consumer.TopicHeartbeats)
 	group := getEnv("OBS_CONSUMER_GROUP", "obs-svc-agg")
 	addr := getEnv("OBS_HTTP_ADDR", ":8090")
 
@@ -43,7 +43,7 @@ func main() {
 	go func() {
 		backoff := time.Second
 		for ctx.Err() == nil {
-			err := consumer.Run(ctx, brokers, group, topic, state)
+			err := consumer.Run(ctx, brokers, group, topics, state)
 			if err == nil || ctx.Err() != nil {
 				return
 			}

@@ -55,6 +55,18 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "obs_svc_backups_total{project=%q} %d\n", project, st.Total)
 		fmt.Fprintf(w, "obs_svc_backup_failures_total{project=%q} %d\n", project, st.Failures)
 	}
+
+	// Per-service debounced health: the state label is the state-machine output
+	// (post-hysteresis), so a flapping service does not flicker the series.
+	for service, sh := range snap.Services {
+		fmt.Fprintf(w, "obs_svc_service_health{service=%q,state=%q} 1\n", service, sh.State)
+		fmt.Fprintf(w, "obs_svc_service_heartbeats_total{service=%q} %d\n", service, sh.HeartbeatCount)
+	}
+	// Fleet rollup.
+	fmt.Fprintf(w, "obs_svc_fleet_overall{state=%q} 1\n", snap.Fleet.Overall)
+	fmt.Fprintf(w, "obs_svc_fleet_active_nodes %d\n", snap.Fleet.ActiveNodes)
+	fmt.Fprintf(w, "obs_svc_fleet_degraded_nodes %d\n", snap.Fleet.DegradedNodes)
+	fmt.Fprintf(w, "obs_svc_fleet_exhausted_nodes %d\n", snap.Fleet.ExhaustedNodes)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
