@@ -1,10 +1,9 @@
 # Cluster-internal Service for obs-svc-agg's HTTP surface (/health, /metrics,
 # /state). No NodePort/host port: per the migration contract, inbound reaches
 # services only via the single traefik edge (cloudflared -> traefik -> service).
-# An IngressRoute is intentionally not authored here -- obs-svc-agg's external
-# exposure (the dashboard) is owned by the obs-svc/transparent-sunset work and
-# routed at traefik; this Service is the stable in-cluster name traefik and the
-# metrics scraper address.
+# This Service is the stable in-cluster name the metrics scraper and traefik
+# address. obs-svc-agg's external exposure (the proof-layer dashboard) is routed
+# at the single traefik edge via kube/ingressroute.yaml (Host -> this Service).
 apiVersion: v1
 kind: Service
 metadata:
