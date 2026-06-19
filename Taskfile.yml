@@ -34,3 +34,9 @@ tasks:
     deps: [generate]
     cmds:
       - go test ./... -cover
+
+  coverage:
+    desc: Enforce the ./pkg/... coverage floor (the pre-push gate; emits JSON).
+    deps: [generate]
+    cmds:
+      - ./scripts/coverage.sh

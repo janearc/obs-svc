@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# pre-push — mathematically block a push that drops coverage below the floor.
+#
+# Mandated by the fleet engineering standards: every repo embeds this gate so a
+# regression in test coverage cannot reach the remote. Enable once per clone:
+#
+#     git config core.hooksPath .githooks
+#
+# Override the floor with OBS_COVERAGE_FLOOR; skip in a genuine emergency with
+# `git push --no-verify` (which is auditable).
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+echo "pre-push: enforcing obs-svc-agg coverage floor"
+"$ROOT/scripts/coverage.sh"
