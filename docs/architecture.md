@@ -1,58 +1,79 @@
-# Architectural Record: Local Fleet & Quota Observability Daemon
+# obs-svc — fleet health and token runway, at a glance
 
-> **Status:** Proposed  
-> **Date:** 2026-06-16  
+> Architecture for **obs-svc**, the observability layer of
+> [blm](https://github.com/janearc/blm). Status: proposed. Date: 2026-06-16.
 
-## 1. Context and Problem Statement
+## What it is
 
-The fleet operates behind Traefik and communicates via Protobuf over Kafka. However, **no services are currently emitting to Kafka** (with the possible exception of `paling`). Transitioning to this event-driven observability model requires an enormous, cross-fleet diff. We will have to instrument `traefik`, `fleet-svc`, `delightd`, `comfy`, `transparent`, `la-domestique`, `paling`, `antigravity` (agy/gemini), and `odysseus` to natively consume and emit Kafka payloads. 
+obs-svc answers one question without you having to ask it: **is the fleet okay,
+and how much token runway is left?** A small frameless widget floats on your
+desktop — think the macOS Activity Monitor CPU window — and a local daemon does
+all the thinking behind it. Glance at it; if it's green, get back to work.
 
-Simultaneously, LLM agent operations introduce a critical constraint: token quota and burn rate. Token burn rate serves both as a hard cost constraint and a fundamental metric of developer activity.
+It watches two things at once:
 
-We require a small, unobtrusive, floating observability widget (analogous to the macOS Activity Monitor's floating CPU window) that unifies fleet health and token runway. 
+- **fleet health** — which services are up, degraded, or down.
+- **token runway** — how fast agents are burning tokens, and how long the budget
+  lasts at that rate. (Burn rate isn't a deep engineering metric; it's the number
+  nontechnical folks find interesting — *how much is this costing right now.*)
 
-## 2. Architectural Invariants
+## The two pieces
 
-1. **State Segregation**: The UI must be completely stateless. All metric aggregation, buffering, and threshold calculations are handled by a local background daemon.
-2. **Language Constraints & Security**: The core stack is strictly **Golang and Rust**. Any inclusion of JavaScript, Python, or unverified libraries (especially JSON parsers vulnerable to agent-injection) are severe tier-0 security risks.
-3. **Idempotent Telemetry & Backoff**: If the daemon reconnects, state transitions must be strictly idempotent. Network retries must utilize standard exponential backoff.
-4. **Post-Meteor Discovery**: Hardcoding endpoints/ports is forbidden. The daemon must present itself as strictly **UNHEALTHY** upon a cold boot until it successfully polls Traefik and registers.
-5. **Coverage Enforcement**: A hard floor of **87%** is strictly enforced for the new `obs-svc` repository. For existing fleet services modified during the cross-fleet diff, the strict rule is **non-regression**: subagents must not decrease coverage below the pre-diff baseline (tracked in handoff state).
-6. **Schema Governance**: Confluent Schema Registry compatibility must be locked to `FULL_TRANSITIVE` to prevent forward/backward breaks across all historical versions. Fields are **never removed, only deprecated** (retained for a minimum of 3 release cycles). The `Taskfile.yml` must enforce this via `buf lint` and `buf breaking` pre-commit gates.
+obs-svc is split deliberately, so the part you look at holds no state and can't
+quietly lie to you:
 
-## 3. System Design
+- **obs-svc-agg** (Go) — the daemon. It ingests events, runs the health and quota
+  state machine, and pushes a finished snapshot to the widget. All the buffering,
+  thresholds, and judgment live here.
+- **obs-svc-apple** (Rust) — the widget. A thin, frameless macOS client
+  (`NSWindowLevelFloating`) that renders the latest snapshot over a gRPC feed
+  (default every 2 seconds). It computes nothing.
 
-The architecture is self-contained within `~/work/obs-svc`. The build system will utilize **Task** (`Taskfile.yml`), enforcing `-dev` and `-prod` deployment groups. 
+## How it knows what's true
 
-> **Documentation Mandate:** The exhaustive mechanics of the internal state machines will *not* be derived from this conversation log. They must be codified in explicit detail within `obs-svc/docs/design.md`. `obs-svc`, `fleet-svc`, and `delightd` must all contain an `overview.md`.
+The daemon doesn't hardcode where the fleet is. On a cold boot it reports itself
+**UNHEALTHY** and stays that way until it has discovered the live endpoints — the
+same discipline [delightd](https://github.com/janearc/delightd) uses to be the
+fleet's source of truth: present nothing until you actually know it.
 
-### 3.1. The Aggregator Daemon (`obs-svc-agg` in Go)
-A local Go service responsible for data ingestion and state machine execution.
+Health and token events arrive over Kafka. The daemon does not buffer in memory
+during an unhealthy boot; it relies on **Kafka replay**, seeking back to its
+committed offsets once healthy, and commits offsets only *after* a successful
+state transition — so a crash mid-process loses nothing.
 
-*   **Cold Boot Buffering**: The daemon will *not* buffer in memory during an `UNHEALTHY` boot state. It will rely strictly on **Kafka replay**. When the daemon becomes healthy, it will seek back to committed offsets. Offsets are strictly committed *after* a successful state transition to prevent data loss mid-crash.
-*   **Widget Cadence**: `TokenBurnEvent` ingestion operates continuously. However, pushing updates to the UI at this rate wastes CPU and causes UI flicker. `obs-svc-agg` will utilize an internal `time.Ticker` (configurable, default 2 seconds) to accumulate events and push batched snapshots to the widget.
-*   **State Machine Mechanics**: Transitions must be codified in `design.md` utilizing strict hysteresis to prevent flapping (e.g., requiring 3 consecutive healthy heartbeats to snap back to GREEN). Minimum transition logic:
-    ```text
-    UNSPECIFIED → GREEN   : first healthy heartbeat received
-    GREEN → YELLOW        : >0 degraded nodes OR burn_rate exceeds threshold_1
-    YELLOW → RED          : >N degraded nodes OR burn_rate exceeds threshold_2
-    ANY → EXHAUSTED       : absolute_quota_remaining_cents == 0
-    EXHAUSTED → *         : not permitted (terminal, requires manual reset)
-    ANY → UNHEALTHY       : Traefik endpoint lost (daemon-internal, not broadcast)
-    ```
+### The health state machine
 
-### 3.2. Secrets Backend (Kube Secrets & RBAC)
-Given the tier-0 security posture, API keys cannot reside in plaintext. Because the fleet already runs on Kubernetes, we will natively utilize **Kube Secrets**. To maintain strict least-privilege isolation, we will implement Kubernetes Role-Based Access Control (RBAC):
-1. Create a dedicated `ServiceAccount` for `obs-svc-agg`.
-2. Provision a `Role` with `get` and `watch` verbs restricted exclusively to the specific `obs-svc-secrets` object.
-3. Bind the `Role` to the `ServiceAccount` via a `RoleBinding`.
+The widget shows one of a few colors, and the daemon moves between them with
+hysteresis (it takes a few consecutive healthy heartbeats to return to green, so
+the light doesn't flap):
 
-### 3.3. The Presentation Layer (`obs-svc-apple` in Rust)
-A thin, dumb client written in Rust. It lives within `obs-svc` but acts strictly as `obs-svc-apple`, consuming the 2-second snapshot gRPC feed from `obs-svc-agg`. It runs as a frameless macOS application with `NSWindowLevelFloating`.
+```text
+UNSPECIFIED → GREEN    : first healthy heartbeat
+GREEN → YELLOW         : a degraded node, or burn rate over threshold_1
+YELLOW → RED           : several degraded nodes, or burn rate over threshold_2
+ANY → EXHAUSTED        : token budget hits zero (terminal — manual reset)
+ANY → UNHEALTHY        : discovery endpoint lost (daemon-internal, not shown)
+```
 
-## 4. Protobuf Schemas
+The exact thresholds and timer mechanics live with the implementation, not here.
 
-### 4.1. Global Fleet Observability (`observability.v1`)
+## Secrets
+
+API keys never sit in plaintext. obs-svc-agg reads them from **Kube Secrets**
+under a least-privilege RBAC binding: a dedicated `ServiceAccount`, a `Role`
+scoped to `get`/`watch` on exactly the `obs-svc-secrets` object, and a
+`RoleBinding` tying them together. Nothing else in the cluster can read them, and
+the widget never sees them at all.
+
+## The contracts
+
+obs-svc speaks Protobuf over Kafka. Schema compatibility is locked to
+`FULL_TRANSITIVE` in the Confluent Schema Registry, and fields are never removed,
+only deprecated — so an old consumer and a new one can always read the same
+stream. The keywords **MUST**, **SHALL**, and **SHOULD** carry their
+[RFC 2119 / BCP 14](https://www.rfc-editor.org/rfc/rfc2119) meanings.
+
+### observability.v1 — fleet health + token burn
 
 ```protobuf
 syntax = "proto3";
@@ -68,28 +89,24 @@ enum HealthState {
   HEALTH_STATE_GREEN = 1;
   HEALTH_STATE_YELLOW = 2;
   HEALTH_STATE_RED = 3;
-  HEALTH_STATE_EXHAUSTED = 4; // 💀 Terminal state
+  HEALTH_STATE_EXHAUSTED = 4; // terminal
 }
 
 message ServiceHealthHeartbeat {
   string service_name = 1;
   HealthState current_state = 2;
   uint32 uptime_seconds = 3;
-  uint32 internal_load_metric = 4; 
+  uint32 internal_load_metric = 4;
   google.protobuf.Timestamp timestamp = 5;
-  
-  // Unique identifier for idempotent processing (UUID or service+timestamp)
-  string idempotency_key = 6;
+  string idempotency_key = 6; // for idempotent processing (UUID or service+timestamp)
 }
 
 message TokenBurnEvent {
   string agent_id = 1;
   string action_context = 2;
   uint32 tokens_consumed = 3;
-  optional uint32 cost_estimated_micro_usd = 4; 
+  optional uint32 cost_estimated_micro_usd = 4;
   google.protobuf.Timestamp timestamp = 5;
-  
-  // Unique identifier for idempotent processing
   string idempotency_key = 6;
 }
 
@@ -103,18 +120,19 @@ message FleetMetrics {
   HealthState overall_health = 1;
   uint32 active_nodes = 2;
   uint32 degraded_nodes = 3;
-  string active_discovery_endpoint = 4; 
+  string active_discovery_endpoint = 4;
 }
 
 message QuotaMetrics {
   HealthState runway_state = 1;
   uint32 runway_minutes_remaining = 2;
   uint32 burn_rate_tokens_per_minute = 3;
-  uint32 absolute_quota_remaining_cents = 4; 
+  uint32 absolute_quota_remaining_cents = 4;
 }
 ```
 
-### 4.2. Delight Daemon (`delight.v1`)
+### delight.v1 — backup events from delightd
+
 ```protobuf
 syntax = "proto3";
 
@@ -140,35 +158,3 @@ message ServiceBackupStatus {
   bool has_bash_fragment = 4;
 }
 ```
-
-## 5. Concrete Execution Plan
-
-**Core Directive: Handoff State Management**
-We explicitly **expect agent/model failure and resume due to laptop environment/status volatility**. The primary agent and *all* subagents must maintain persistent `handoff_state.md` files.
-
-### The Sequence
-
-0.  **`paling` Pre-Flight Audit**:
-    -   Dispatch an agent to audit the `paling` repository's existing Kafka emission logic. Generate a report. If it conforms to the new idempotent `observability.v1` schema, omit it from the cross-fleet diff.
-1.  **`delightd` API & Wrappers**:
-    -   Update `delightd` to respond to service introspection queries.
-    -   Write explicit unit tests proving we can query `delightd` state logic.
-2.  **`delightd` Telemetry Proof-of-Work (Dry Run)**:
-    -   Instrument `delightd` to emit the standardized telemetry. Run in `--dry-run`.
-    -   Consume and verify the Kafka logs to prove correctness.
-3.  **`delightd` Production Cutover**:
-    -   Update launch configuration to perform genuine backups.
-4.  **Cross-Fleet Diff Preparation (Dependency Map)**:
-    -   Produce a dependency map identifying shared modules across the remaining 8 services to prevent subagent merge conflicts.
-    -   Record baseline test coverage for every service in the root `handoff_state.md`.
-5.  **The Cross-Fleet Diff (Subagent Orchestration)**:
-    -   **Wave 1**: Dispatch subagents to instrument services with *no* shared dependencies.
-    -   **Wave 2**: Dispatch subagents sequentially to instrument services touching shared code.
-    -   Subagents will optimize hot paths and strictly enforce non-regression coverage rules.
-6.  **Bootstrap `obs-svc`**:
-    -   Write `overview.md` and `design.md` (detailing timeouts, hysteresis, etc.).
-    -   Implement `obs-svc-agg` utilizing Kafka replay and `time.Ticker` decoupling.
-    -   Implement `obs-svc-apple` (Rust).
-    -   Validate the 87% coverage floor pipeline.
-</content>
-</invoke>
