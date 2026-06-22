@@ -1,0 +1,24 @@
+# kustomize entry point for the ELK stack in namespace `fleet`.
+#
+# Kept separate from the obs-svc-agg kustomization one level up (kube/) so the
+# log store and the aggregator deploy independently -- `kubectl apply -k
+# kube/elk/` brings up ELK without touching obs-svc-agg, and vice versa.
+#
+# The namespace object itself is not redeclared here (it is owned by the parent
+# kube/namespace.yaml and already exists in the cluster); `namespace: fleet`
+# below pins every object in this bundle to it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: fleet
+
+resources:
+  - elasticsearch.yaml
+  - kibana.yaml
+  - logstash.yaml
+  - grafana.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: fleet
+    includeSelectors: false
