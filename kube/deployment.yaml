@@ -1,5 +1,5 @@
 # obs-svc-agg: the Go observability aggregator. Consumes the fleet's
-# Protobuf-over-Kafka events (delight.events + observability.heartbeat), holds
+# Protobuf-over-Kafka events (delight.events + observability.events), holds
 # all aggregated state in memory, and serves /health, /metrics, /state on :8090.
 #
 # Stateless by design: all durable state lives upstream in Kafka, and the
@@ -43,14 +43,14 @@ spec:
             # kafka:9092) so the same image runs under compose and k8s.
             - name: OBS_KAFKA_BROKERS
               value: kafka.fleet.svc.cluster.local:9092
-            # Topics: the binary defaults to delight.events,observability.heartbeat
+            # Topics: the binary defaults to delight.events,observability.events
             # (consumer.TopicBackups + consumer.TopicHeartbeats). Set explicitly
             # here so the consumed set is visible at the manifest layer and
             # overridable without a rebuild. Note the env key is OBS_KAFKA_TOPICS
             # (plural) -- the singular OBS_KAFKA_TOPIC in the old compose file is
             # dead config the current binary does not read.
             - name: OBS_KAFKA_TOPICS
-              value: delight.events,observability.heartbeat
+              value: delight.events,observability.events
             - name: OBS_CONSUMER_GROUP
               value: obs-svc-agg
             - name: OBS_HTTP_ADDR
