@@ -22,8 +22,11 @@ import (
 // the Go type from the topic rather than a registry lookup; a registry-driven
 // resolver is a documented follow-up).
 const (
-	TopicBackups    = "delight.events"
-	TopicHeartbeats = "observability.heartbeat"
+	TopicBackups = "delight.events"
+	// Heartbeats ride observability.events (RecordNameStrategy carries the schema id);
+	// there is no separate observability.heartbeat topic -- producers emit to
+	// observability.events.
+	TopicHeartbeats = "observability.events"
 )
 
 // Run consumes the given topics and folds each record into the aggregator,

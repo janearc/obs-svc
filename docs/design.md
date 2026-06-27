@@ -126,7 +126,7 @@ the architecture and will sit on top of `Snapshot()`.
 
 The consumer subscribes to multiple topics and dispatches each record by topic
 to the right message type (`delight.events` → `delight.v1.BackupEvent`,
-`observability.heartbeat` → `observability.v1.ServiceHealthHeartbeat`); a record
+`observability.events` → `observability.v1.ServiceHealthHeartbeat`); a record
 from an unmodeled topic is skipped rather than mis-parsed.
 
 ## 6. Known gaps / follow-ups
