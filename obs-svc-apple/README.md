@@ -54,9 +54,21 @@ never blank against today's aggregator.
 
 Requires the Rust toolchain (`cargo`) and macOS (for the native window).
 
+`obs-svc-agg` runs in the k3s `fleet` namespace as a ClusterIP Service on `:8090`
+(no host port). `run-obs-apple.sh` reaches it for you: it stands up a local
+`kubectl port-forward` to the Service, waits until `/state` answers, points the
+widget at it, and tears the forward down on exit.
+
 ```sh
 cd obs-svc-apple
-cargo run --release
+./run-obs-apple.sh            # needs kubectl pointed at the cluster (context k3d-fleet)
+```
+
+To bypass discovery (a remote host, Traefik, or your own forward), set `OBS_AGG_URL`
+and the script execs the widget directly:
+
+```sh
+OBS_AGG_URL=http://127.0.0.1:18090/state ./run-obs-apple.sh
 ```
 
 A small dark panel appears near the lower-left of the screen, floating above
@@ -80,9 +92,11 @@ container port, a remote host) serves `/state`. To confirm the source first:
 curl -s "$OBS_AGG_URL" | python3 -m json.tool
 ```
 
-> Note: the published host port of the `obs-svc-agg` container can vary (Docker
-> may map the internal `8090` to an ephemeral host port). Set `OBS_AGG_URL` to
-> the mapped port, or run against Traefik. `docker ps` shows the mapping.
+> Note: `obs-svc-agg` is a ClusterIP Service on `:8090` in the k3s `fleet`
+> namespace — there is no host port to discover. `run-obs-apple.sh` forwards the
+> Service to a local port (default `18090`; `:8090` is held by another process on
+> this host) via `kubectl port-forward`. Override the local port with
+> `OBS_AGG_PORT`, or set `OBS_AGG_URL` to bypass the forward entirely.
 
 ### See it with no aggregator
 
