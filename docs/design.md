@@ -1,6 +1,6 @@
 # obs-svc-agg — design
 
-Authoritative architecture: `../../observability_architecture_v1.md`. This
+Authoritative architecture: `architecture.md`. This
 document records the *mechanics* that doc mandates be written down explicitly.
 
 ## 1. Components and data flow
@@ -18,7 +18,7 @@ paling   ──observability.v1.*──────┤
                                      · (future) 2s gRPC snapshot feed
                                           │
                                           ▼
-                                   obs-svc-apple (Rust widget, not built)
+                                   tiny-monitor (Rust widget, separate repo)
 ```
 
 ## 2. Wire format (the read side)
@@ -134,7 +134,8 @@ from an unmodeled topic is skipped rather than mis-parsed.
 - `QuotaMetrics`/`TokenBurnEvent` → token runway (the EXHAUSTED-on-zero-runway
   driver). `observability.v1.ServiceHealthHeartbeat` ingestion and the full
   HealthState machine with hysteresis are **implemented** (§4.2).
-- The 2s gRPC snapshot feed and `obs-svc-apple` (Rust widget).
+- The 2s gRPC snapshot feed and `tiny-monitor` (Rust widget, in its own repo:
+  https://github.com/janearc/tiny-monitor).
 - Traefik-based discovery as the true post-meteor readiness gate (no hardcoded
   endpoints); today brokers/topic come from env with dev-fleet defaults.
 - Kube Secrets + RBAC for API keys (token-cost data) per the security posture.

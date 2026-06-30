@@ -1,3 +1,0 @@
-# rust build output -- never committed. Cargo.lock IS committed (this crate
-# ships a binary, so the lockfile pins a reproducible dependency set).
-/target
