@@ -1,6 +1,6 @@
 # obs-svc-agg — design
 
-Authoritative architecture: `../../observability_architecture_v1.md`. This
+Authoritative architecture: `architecture.md`. This
 document records the *mechanics* that doc mandates be written down explicitly.
 
 ## 1. Components and data flow

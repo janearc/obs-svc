@@ -4,7 +4,7 @@ obs-svc is the fleet's observability daemon: it turns the Protobuf-over-Kafka
 events the fleet emits into a single, glanceable picture of fleet health and LLM
 token runway.
 
-Two components (architecture of record: `../observability_architecture_v1.md`):
+Two components (architecture of record: `docs/architecture.md`):
 
 - **`obs-svc-agg`** (Go) — the brain. Consumes fleet events from Kafka, holds
   *all* aggregated state, runs the health state machine, and serves snapshots.
