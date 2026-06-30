@@ -9,8 +9,9 @@ Two components (architecture of record: `../observability_architecture_v1.md`):
 - **`obs-svc-agg`** (Go) — the brain. Consumes fleet events from Kafka, holds
   *all* aggregated state, runs the health state machine, and serves snapshots.
   This is what's built today.
-- **`obs-svc-apple`** (Rust) — a thin, stateless floating macOS widget that
-  renders a 2-second snapshot feed from the aggregator. Not yet built.
+- **`tiny-monitor`** (Rust) — a thin, stateless floating macOS widget that
+  renders a 2-second snapshot feed from the aggregator. Lives in its own repo
+  ([janearc/tiny-monitor](https://github.com/janearc/tiny-monitor)).
 
 ## What works today
 

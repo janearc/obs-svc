@@ -25,9 +25,10 @@ quietly lie to you:
 - **obs-svc-agg** (Go) — the daemon. It ingests events, runs the health and quota
   state machine, and pushes a finished snapshot to the widget. All the buffering,
   thresholds, and judgment live here.
-- **obs-svc-apple** (Rust) — the widget. A thin, frameless macOS client
+- **tiny-monitor** (Rust) — the widget. A thin, frameless macOS client
   (`NSWindowLevelFloating`) that renders the latest snapshot over a gRPC feed
-  (default every 2 seconds). It computes nothing.
+  (default every 2 seconds). It computes nothing. Lives in its own repo:
+  [janearc/tiny-monitor](https://github.com/janearc/tiny-monitor).
 
 ## How it knows what's true
 
